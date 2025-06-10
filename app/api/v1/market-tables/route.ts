@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { ImageResponse } from "@vercel/og"
+import React from "react"
 import {
   getContractKeys,
   getContractsData,
@@ -13,8 +14,7 @@ export const revalidate = 0
 
 const imageOptions = {
   width: 2048,
-  height: undefined,
-  emoji: "twemoji",
+  emoji: "twemoji" as const,
   debug: false,
 }
 
@@ -80,8 +80,31 @@ async function generateMarketTable(symbol: "ZS" | "ZC", title: string, dollarDat
       .filter((data): data is NonNullable<typeof data> => data !== null)
       .sort((a, b) => a.timestamp - b.timestamp)
 
-    // Gerar imagem
-    const image = await new ImageResponse(generateTableStructure(parsedData, title, dollarData, euroData), imageOptions)
+    // Gerar imagem simples
+    const image = await new ImageResponse(
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          width: '100%',
+          backgroundColor: '#1a1a1a',
+          padding: 40,
+          color: '#ffffff',
+          fontSize: 32,
+        }}
+      >
+        <div style={{ fontSize: 42, fontWeight: 700, marginBottom: 20 }}>
+          {title} - CBOT (USD / bushel)
+        </div>
+        <div style={{ fontSize: 28, marginBottom: 30 }}>
+          {dollarData ? `USD/BRL: ${dollarData.lastPrice}` : 'USD/BRL: N/A'}
+        </div>
+        <div>
+          Dados de mercado para {parsedData.length} contratos
+        </div>
+      </div> as any,
+      imageOptions
+    )
 
     // Converter para base64
     return Buffer.from(await image.arrayBuffer()).toString("base64")
