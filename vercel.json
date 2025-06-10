@@ -1,0 +1,68 @@
+{
+  "version": 2,
+  "name": "market-data-api",
+  "builds": [
+    {
+      "src": "package.json",
+      "use": "@vercel/next"
+    }
+  ],
+  "functions": {
+    "app/api/v1/market-tables/route.ts": {
+      "maxDuration": 30
+    },
+    "app/api/v1/market-data/route.ts": {
+      "maxDuration": 15
+    },
+    "app/api/health/route.ts": {
+      "maxDuration": 10
+    }
+  },
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
+        },
+        {
+          "key": "Access-Control-Allow-Methods",
+          "value": "GET, POST, PUT, DELETE, OPTIONS"
+        },
+        {
+          "key": "Access-Control-Allow-Headers",
+          "value": "Content-Type, Authorization"
+        },
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "DENY"
+        },
+        {
+          "key": "X-XSS-Protection",
+          "value": "1; mode=block"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "no-store, no-cache, must-revalidate, proxy-revalidate"
+        }
+      ]
+    }
+  ],
+  "redirects": [
+    {
+      "source": "/",
+      "destination": "/api/health",
+      "permanent": false
+    }
+  ],
+  "env": {
+    "NODE_ENV": "production"
+  },
+  "regions": ["iad1"],
+  "public": false
+} 
