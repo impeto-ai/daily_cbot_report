@@ -8,7 +8,7 @@ import {
   parseCurrencyData,
 } from "@/lib/redis-client"
 
-export const dynamic = "force_dynamic"
+export const dynamic = "force-dynamic"
 export const revalidate = 0
 
 const imageOptions = {
