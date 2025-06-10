@@ -47,13 +47,7 @@
       ]
     }
   ],
-  "redirects": [
-    {
-      "source": "/",
-      "destination": "/api/health",
-      "permanent": false
-    }
-  ],
+
   "env": {
     "NODE_ENV": "production"
   },
