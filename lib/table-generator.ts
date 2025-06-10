@@ -1,5 +1,3 @@
-import puppeteer from "puppeteer-core"
-import chromium from "@sparticuz/chromium"
 import logger from './logger'
 
 interface MarketData {
@@ -19,52 +17,7 @@ interface MarketData {
 const isProduction = process.env.NODE_ENV === 'production'
 const isVercel = process.env.VERCEL === '1'
 
-async function getBrowserConfig() {
-  if (isVercel || isProduction) {
-    // Configuração otimizada para Vercel/serverless
-    return {
-      headless: chromium.headless,
-      executablePath: await chromium.executablePath(),
-      args: [
-        ...chromium.args,
-        '--hide-scrollbars',
-        '--disable-web-security',
-        '--disable-features=VizDisplayCompositor',
-      ],
-      defaultViewport: chromium.defaultViewport,
-    }
-  } else {
-    // Configuração para desenvolvimento local
-    try {
-      // Tentar usar puppeteer normal em desenvolvimento
-      const { default: puppeteerFull } = await import('puppeteer')
-      const executablePath = await puppeteerFull.executablePath()
-      
-      return {
-        headless: true,
-        executablePath,
-        args: ['--no-sandbox', '--disable-setuid-sandbox'],
-      }
-    } catch (error) {
-      logger.warn('Puppeteer full not available, using puppeteer-core with system Chrome')
-      
-      // Fallback para puppeteer-core se puppeteer não estiver disponível
-      return {
-        headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox'],
-        // Tentar encontrar Chrome no sistema (macOS/Linux/Windows)
-        executablePath: process.env.CHROME_PATH || 
-                       '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' || // macOS
-                       '/usr/bin/google-chrome' || // Linux
-                       'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe' // Windows
-      }
-    }
-  }
-}
-
 export async function generateTableImage(data: MarketData[], title: string): Promise<string | undefined> {
-  let browser
-  
   try {
     logger.debug('Starting table image generation', { 
       title, 
@@ -73,22 +26,45 @@ export async function generateTableImage(data: MarketData[], title: string): Pro
       isVercel 
     })
 
-    const config = await getBrowserConfig()
-    
-    // Usar o puppeteer apropriado baseado no ambiente
+    // Carregar puppeteer baseado no ambiente
+    let puppeteer: any
+    let browser: any
+
     if (isVercel || isProduction) {
-      browser = await puppeteer.launch(config)
-    } else {
+      // Ambiente serverless - usar @sparticuz/chromium
       try {
-        // Tentar usar puppeteer normal em desenvolvimento
-        const { default: puppeteerFull } = await import('puppeteer')
-        browser = await puppeteerFull.launch(config)
+        const puppeteerCore = await import('puppeteer-core')
+        const chromium = await import('@sparticuz/chromium')
+        
+        browser = await puppeteerCore.default.launch({
+          headless: chromium.default.headless,
+          executablePath: await chromium.default.executablePath(),
+          args: [
+            ...chromium.default.args,
+            '--hide-scrollbars',
+            '--disable-web-security',
+            '--disable-features=VizDisplayCompositor',
+          ],
+          defaultViewport: chromium.default.defaultViewport,
+        })
       } catch (error) {
-        // Fallback para puppeteer-core
-        browser = await puppeteer.launch(config)
+        logger.error('Failed to launch browser in production', { error })
+        return undefined
+      }
+    } else {
+      // Ambiente local - usar puppeteer normal
+      try {
+        const puppeteerFull = await import('puppeteer')
+        browser = await puppeteerFull.default.launch({
+          headless: true,
+          args: ['--no-sandbox', '--disable-setuid-sandbox'],
+        })
+      } catch (error) {
+        logger.error('Failed to launch browser in development', { error })
+        return undefined
       }
     }
-    
+
     const page = await browser.newPage()
     
     // Definir viewport para controlar o tamanho da imagem
@@ -232,6 +208,8 @@ export async function generateTableImage(data: MarketData[], title: string): Pro
       quality: 100
     })
 
+    await browser.close()
+
     logger.debug('Table image generated successfully', { 
       title,
       imageSizeBytes: imageBuffer ? imageBuffer.length : 0
@@ -248,17 +226,6 @@ export async function generateTableImage(data: MarketData[], title: string): Pro
     
     // Em caso de erro, retornar undefined para que a API possa continuar
     return undefined
-    
-  } finally {
-    if (browser) {
-      try {
-        await browser.close()
-      } catch (closeError) {
-        logger.warn('Failed to close browser', { 
-          error: closeError instanceof Error ? closeError.message : String(closeError)
-        })
-      }
-    }
   }
 }
 
