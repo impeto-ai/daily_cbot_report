@@ -6,6 +6,9 @@ import { getCachedData, cacheKeys } from './cache'
 
 let redisClient: Redis | null = null
 
+// Timeout para operações Redis (10 segundos)
+const REDIS_TIMEOUT = 10000
+
 export function createRedisClient(): Redis {
   if (redisClient) return redisClient
 
@@ -31,6 +34,16 @@ export function createRedisClient(): Redis {
   }
 }
 
+// Função helper para aplicar timeout em operações Redis
+async function withTimeout<T>(promise: Promise<T>, timeout: number = REDIS_TIMEOUT): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) => 
+      setTimeout(() => reject(new Error('Redis operation timeout')), timeout)
+    )
+  ])
+}
+
 export async function getContractKeys(symbol: "ZC" | "ZS"): Promise<string[]> {
   const cacheKey = cacheKeys.contractKeys(symbol)
   
@@ -39,7 +52,7 @@ export async function getContractKeys(symbol: "ZC" | "ZS"): Promise<string[]> {
     const startTime = Date.now()
     
     try {
-      const keys = await redis.keys(`cbot:${symbol}*`)
+      const keys = await withTimeout(redis.keys(`cbot:${symbol}*`))
       const duration = Date.now() - startTime
       
       logger.redisOperation('keys', `cbot:${symbol}*`, duration, true)
@@ -52,33 +65,47 @@ export async function getContractKeys(symbol: "ZC" | "ZS"): Promise<string[]> {
   }, 60000) // Cache for 1 minute
 }
 
-export async function getContractsData(keys: string[]) {
+export async function getContractsData(keys: string[]): Promise<string[]> {
   const redis = createRedisClient()
   if (!redis) {
-    console.error("Redis client not initialized")
+    logger.error("Redis client not initialized")
     return []
   }
 
   if (keys.length === 0) return []
 
+  const startTime = Date.now()
+  
   try {
-    const data = await Promise.all(
-      keys.map(async (key) => {
-        try {
-          const result = await redis.get(key)
-          if (typeof result === "string") {
-            return result
-          }
-          return JSON.stringify(result)
-        } catch (error) {
-          console.error(`Error fetching data for key ${key}:`, error)
-          return null
-        }
-      }),
-    )
-    return data.filter((item) => item !== null)
+    // Usar pipeline do Redis para buscar todos os dados de uma vez (muito mais eficiente)
+    const pipeline = redis.pipeline()
+    keys.forEach(key => pipeline.get(key))
+    
+    const results = await withTimeout(pipeline.exec())
+    const duration = Date.now() - startTime
+    
+    logger.debug('Redis pipeline completed', { 
+      keysCount: keys.length, 
+      duration: `${duration}ms`,
+      successRate: results.filter(r => r !== null).length / results.length
+    })
+
+    // Processar resultados e filtrar nulos
+    const data = results
+      .map((result: any) => {
+        if (result === null) return null
+        if (typeof result === "string") return result
+        return JSON.stringify(result)
+      })
+      .filter((item): item is string => item !== null)
+
+    return data
   } catch (error) {
-    console.error("Error fetching contracts data:", error)
+    const duration = Date.now() - startTime
+    logger.error("Error fetching contracts data", { 
+      keysCount: keys.length, 
+      duration: `${duration}ms` 
+    }, error as Error)
     return []
   }
 }
@@ -197,22 +224,31 @@ export function parseMarketData(rawData: string | null) {
 }
 
 // Adicionar uma nova função para buscar as chaves de câmbio
-export async function getCurrencyKeys() {
-  const redis = createRedisClient()
-  if (!redis) {
-    console.error("Redis client not initialized")
-    return []
-  }
-
-  try {
-    // Buscar chaves para dólar e euro
-    const keys = await redis.keys("*DOL COM*")
-    const euroKeys = await redis.keys("*EUROCOM*")
-    return [...keys, ...euroKeys].sort()
-  } catch (error) {
-    console.error(`Error fetching currency keys:`, error)
-    return []
-  }
+export async function getCurrencyKeys(): Promise<string[]> {
+  const cacheKey = cacheKeys.contractKeys('currency')
+  
+  return getCachedData(cacheKey, async () => {
+    const redis = createRedisClient()
+    const startTime = Date.now()
+    
+    try {
+      // Buscar chaves de dólar e euro em paralelo
+      const [dollarKeys, euroKeys] = await Promise.all([
+        withTimeout(redis.keys("*DOL*")),
+        withTimeout(redis.keys("*EURO*"))
+      ])
+      
+      const allKeys = [...dollarKeys, ...euroKeys]
+      const duration = Date.now() - startTime
+      
+      logger.redisOperation('keys', 'currency', duration, true)
+      return allKeys
+    } catch (error) {
+      const duration = Date.now() - startTime
+      logger.redisOperation('keys', 'currency', duration, false)
+      throw createRedisConnectionError('currency keys fetch', (error as Error).message)
+    }
+  }, 60000) // Cache for 1 minute
 }
 
 // Adicionar uma função para processar dados de câmbio

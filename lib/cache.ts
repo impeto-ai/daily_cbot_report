@@ -114,7 +114,7 @@ class MemoryCache {
 }
 
 // Global cache instance
-export const cache = new MemoryCache(500)
+export const cache = new MemoryCache(100)
 
 // Cache key generators
 export const cacheKeys = {
@@ -207,10 +207,21 @@ export function scheduledCacheCleanup(): void {
   const stats = cache.getStats()
   logger.info('Scheduled cache cleanup', stats)
   
-  // Force cleanup if too many expired entries
-  if (stats.expired > stats.total * 0.3) {
+  // Force cleanup if too many expired entries or cache is getting full
+  if (stats.expired > stats.total * 0.2 || stats.total > 80) {
     cache['cleanup']()
+    
+    // Force garbage collection if available (development only)
+    if (global.gc && process.env.NODE_ENV === 'development') {
+      global.gc()
+      logger.debug('Forced garbage collection')
+    }
   }
+}
+
+// Auto-cleanup every 5 minutes
+if (typeof setInterval !== 'undefined') {
+  setInterval(scheduledCacheCleanup, 5 * 60 * 1000)
 }
 
 export default cache 
