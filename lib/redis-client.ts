@@ -167,7 +167,7 @@ export function parseMarketData(rawData: string | null) {
     const close = getValue("1A") || "0"
 
     // Converter a data de expiração em um objeto Date
-    const date = getDateFromString(expirationDate)
+    const date = getDateFromString(expirationDate as string)
 
     // Formatar a data no padrão Mês/Ano
     const monthAbbr = MESES_ABREV[`${date.getMonth() + 1}`.padStart(2, "0") as keyof typeof MESES_ABREV]

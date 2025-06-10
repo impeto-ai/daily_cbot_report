@@ -15,7 +15,7 @@ interface MarketData {
 
 export async function generateTableImage(data: MarketData[], title: string) {
   const browser = await puppeteer.launch({
-    headless: "new",
+    headless: true,
   })
 
   const page = await browser.newPage()
