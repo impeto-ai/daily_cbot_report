@@ -6,7 +6,7 @@ import { getCachedData, cacheKeys } from './cache'
 
 let redisClient: Redis | null = null
 
-function createRedisClient(): Redis {
+export function createRedisClient(): Redis {
   if (redisClient) return redisClient
 
   try {
